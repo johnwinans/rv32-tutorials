@@ -1,0 +1,119 @@
+#    RISC-V rv32 tutorial examples
+#
+#    Copyright (C) 2021 John Winans
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+
+
+ARCH=riscv32-unknown-elf
+
+# Define these if you do NOT have a compiler and viable qemu in your path
+#GNU_DIR=$(HOME)/projects/riscv/install/rv64-multilib32
+#GNU_BIN=$(GNU_DIR)/bin/
+
+CC=$(GNU_BIN)$(ARCH)-gcc
+CXX=$(GNU_BIN)$(ARCH)-g++
+AS=$(GNU_BIN)$(ARCH)-as
+LD=$(GNU_BIN)$(ARCH)-ld
+OBJCOPY=$(GNU_BIN)$(ARCH)-objcopy
+OBJDUMP=$(GNU_BIN)$(ARCH)-objdump
+SIZE=$(GNU_BIN)$(ARCH)-size
+AR=$(GNU_BIN)$(ARCH)-ar
+RANLIB=$(GNU_BIN)$(ARCH)-ranlib
+
+#MARCH=rv32imac
+#MARCH=rv32iac
+MARCH=rv32ima
+MABI=ilp32
+
+
+CFLAGS+=-Wall -Werror
+CFLAGS+=-g
+CFLAGS+=-Wcast-align
+
+
+CFLAGS+=-ffreestanding 
+CFLAGS+=-fno-pic
+#CFLAGS+=-fomit-frame-pointer
+
+#CFLAGS+=-Wa,-alh=$@.lst,-L
+CFLAGS+=-Wa,-adhln=$@.lst,-L -fverbose-asm
+
+TARGET_ARCH+=-march=$(MARCH)
+TARGET_ARCH+=-mabi=$(MABI)
+
+
+
+LDFLAGS+=-nostdlib
+#LDFLAGS+=-Wl,-T,qemu-system-riscv32.ld
+
+ASFLAGS+=$(CFLAGS)
+
+CXXFLAGS+=$(CFLAGS)
+
+CXXFLAGS+=-fno-use-cxa-atexit           # This will force the destructors into the .fini_array
+
+
+CLEAN_DIRS=$(SUBDIRS:%=clean-%)
+ALL_DIRS=$(SUBDIRS:%=all-%)
+
+OBJDUMPFLAGS+=-Mnumeric,no-aliases
+OBJDUMPFLAGS+=-S
+
+.PHONY: all clean world $(CLEAN_DIRS) $(ALL_DIRS)
+
+all:: $(ALL_DIRS)
+
+#include $(TOP)/Make.depend
+
+
+%.bin : %
+	$(OBJCOPY) $< -O binary $@
+
+%.lst : %
+	$(OBJDUMP) $(OBJDUMPFLAGS) -dr $< > $<.lst
+
+% : %.o
+	$(LINK.c) $(TARGET_ARCH) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+	$(SIZE) -x -A $@
+
+%.s: %.c
+	$(COMPILE.c) -S -o $@ $<
+
+%.s: %.cc
+	$(COMPILE.cc) -S -o $@ $<
+
+%.o: %.c
+	$(COMPILE.c) -o $@ $<
+
+%.o: %.S
+	$(COMPILE.S) -o $@ $<
+
+%.o: %.cc
+	$(COMPILE.cc) -o $@ $<
+
+%.srec: %
+	$(OBJCOPY) $< -O srec $@ 
+
+
+clean:: $(CLEAN_DIRS)
+
+$(ALL_DIRS)::
+	$(MAKE) -C $(@:all-%=%) all
+
+$(CLEAN_DIRS)::
+	$(MAKE) -C $(@:clean-%=%) clean
+
+world:: clean all

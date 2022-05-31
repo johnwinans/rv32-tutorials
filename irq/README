@@ -1,0 +1,34 @@
+#    RISC-V rv32 tutorial examples
+#
+#    Copyright (C) 2021 John Winans
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+
+# Run with one hart like this:
+
+#qemu-system-riscv32 -machine virt -m 128M -bios none -device loader,addr=0x80000000,cpu-num=0 -device loader,file=./prog -nographic -s
+qemu-system-riscv32 -machine virt -m 128M -bios none -device loader,file=./prog -nographic -s
+
+
+
+# Run with multiple harts like this:
+
+qemu-system-riscv32 -machine virt -m 128M -smp cpus=2 -bios none -device loader,addr=0x80000000,cpu-num=0 -device loader,file=./prog -nographic -gdb tcp::1234
+
+
+# To stop qemu: ^A x
+
+# Add a -v flag to the loader to ask it to dump the ld script that it is using!
+# (diff it with the hacked one I created for this app)

@@ -1,0 +1,123 @@
+    RISC-V rv32 tutorial examples
+
+    Copyright (C) 2021 John Winans
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+
+
+2021-05-10 jrw
+
+Memory map of: qemu-system-riscv32 -machine virt
+
+There is a bootstrap at 0x1000 that will load a0 with the mhartid and a1 with 
+the address of a devicetree structure.
+
+
+
+00000000-000fffff	unused
+
+00001000-?	bootstrap that does this:
+				0x00001000:  00000297          auipc           t0,0            # 0x1000
+				0x00001004:  02028593          addi            a1,t0,32
+				0x00001008:  f1402573          csrrs           a0,mhartid,zero
+				0x0000100c:  0182a283          lw              t0,24(t0)
+				0x00001010:  00028067          jr              t0
+
+			...which means that a0 = mhartid, a1=&devicetree
+
+
+00100000-00100fff	sifive,test
+
+00101000-01ffffff	unused
+
+02000000-0200ffff	riscv,clint
+
+02010000-0bffffff	unused
+
+0c000000-0fffffff	riscv,plic
+10000000-100000ff	ns16550a (UART)
+
+10000100-10000fff	unused
+
+10001000-10001fff	virtio,mmio
+10002000-10002fff	virtio,mmio
+10003000-10003fff	virtio,mmio
+10004000-10004fff	virtio,mmio
+10005000-10005fff	virtio,mmio
+10006000-10006fff	virtio,mmio
+10007000-10007fff	virtio,mmio
+10008000-10008fff	virtio,mmio
+
+20000000-21ffffff	FLASH
+22000000-23ffffff	FLASH
+
+30000000-3fffffff	pci-host-ecam-generic
+
+80000000-807f0000	RAM
+80800000-ffffffff	empty
+
+
+
+
+00100000 sifive,test
+			uint32_t test_reg						// write values here to stop qemu
+			test_reg = 0x3333;						// terminate qemu with a failure code
+			test_reg = 0x5555;						// terminate qemu with success code
+			test_reg = 0x7777;						// reset/restart/reboot qemu
+
+02000000 riscv,clint
+			uint32_t msip[0] - msip[4096]			// use to set msi for each hart
+			uint64_t mtimecmp[0] - mtimecmp[4095]	// use to set mti for each hart
+			uint64_t mtime							// the single, global time counter
+
+0c000000 riscv,plic
+			PLIC_NUM_CONTEXT = 0x4000-64
+			PLIC_NUM_SOURCE = 0x400
+			uint32_t priority[PLIC_NUM_SOURCE];     // 0=disable, 1=0, 7=high
+			uint32_t pending[PLIC_NUM_SOURCE/32];   // one bit per source, 1=pending
+			uint32_t reserved[992];
+			uint32_t enable[PLIC_NUM_CONTEXT][PLIC_NUM_SOURCE/32]; // enable each source for each context
+			struct plic_prio_claim_t prio_claim[PLIC_NUM_CONTEXT]; // threshold & claim/complete
+
+
+
+
+***************************************************************
+************** creating a new custom board ********************
+
+	http://souktha.github.io/software/qemu-port/
+
+
+
+
+***************************************************************
+*********** opening additional UART instances *****************
+
+-serial stdio 
+-serial tcp::4444,server
+
+qemu-system-riscv32 -machine virt,dumpdtb=qemu-system-riscv32.dtb -bios none -serial stdio -serial tcp::4444,server
+
+
+XXX I never figured out how to use these additional UARTS from inside qemu.  :-(
+
+
+#qemu-system-riscv32 -machine virt,dumpdtb=virt-serial.dtb -bios none -device serial,baudbase=115200,chardev=/dev/null,wakeup=false -device serial,baudbase=115200,chardev=/dev/null,wakeup=false -device serial,baudbase=115200,chardev=/dev/null,wakeup=false -s
+
+#qemu-system-riscv32 -machine virt,dumpdtb=virt-serial.dtb -bios none -serial stdio -serial null -s
+
+#virtserialport
+#serial

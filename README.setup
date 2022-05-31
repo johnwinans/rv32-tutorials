@@ -1,0 +1,144 @@
+    RISC-V rv32 tutorial examples
+
+    Copyright (C) 2021 John Winans
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+
+
+
+# 2021-05-03
+
+# See: https://github.com/riscv/riscv-gnu-toolchain
+#
+# Motivation to build our own is to be able to get specific rv32 libraries
+
+PROJECTS=~/projects/riscv
+INSTALL=$PROJECTS/install
+
+mkdir -p $PROJECTS
+cd $PROJECTS
+
+git clone https://github.com/riscv/riscv-gnu-toolchain.git
+
+cd riscv-gnu-toolchain.clean
+git checkout 2021.06.26		# this is the HEAD as of the writing of these notes.
+
+
+sudo apt-get install autoconf automake autotools-dev curl python3 libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev
+
+sudo apt-get install python-dev	# (to fix the gdb python dependancy problem)
+
+
+# I get tools named riscv64-unknown-elf-xxx unless I include the with-arch parm:
+./configure --prefix=$PROJECTS/install/rv32i --with-arch=rv32i --with-multilib-generator="rv32i-ilp32--;rv32ima-ilp32--;rv32imafd-ilp32--"
+
+make
+
+
+# The reason you want python support is for the fancy dashboard.
+# Set up the dashboard by creating a ~/.gdbinit file from here:
+# https://github.com/cyrus-and/gdb-dashboard
+#
+# NOWEVER, there are multiple issues with qemu v5 and v6 that make the dashboard a bit problematic 
+# So I add the following lines to hack out the main issue with connecting to qemu v5.2.0:
+
+https://github.com/johnwinans/gdb-dashboard/commit/b1524a2953d17370d6bba96fba1ae25a5210c943
+
+
+
+
+***************** GDB python issue notes *****************************
+*** Issues with the idiotic gdb python support:
+* 
+* 2021-06-23  on Ubuntu 20.04
+* 	/home/winans/.gdbinit:2263: Error in sourced command file:
+* 	Scripting in the "Python" language is not supported in this copy of GDB.
+* 		See https://github.com/riscv/riscv-gnu-toolchain/issues/722
+* 	I tried installing python2 (it did not work.)
+* 	I then hacked the Makefile.in as per the above link (did not work)
+* 	I then did this: sudo apt-get install python-dev (with the --with-python hack it finally works!)
+* 	Starting over...
+* 		Remove the makefile hack (now that I got the python-dev crap right) & redo above config & rebuild.
+
+
+************ On Ubuntu 18.04 *****************************
+
+This silently completes but leaves me with no qemu :-(
+
+XXX sudo apt install qemu-system-misc
+XXX sudo apt install device-tree-compiler
+XXX qemu-system-riscv32 -machine virt,dumpdtb=qemu-system-riscv32.dtb -bios none
+
+# I did this in the riscv-gnu-toolchain directory:
+
+git submodule update --init
+cd qemu
+#git checkout v6.0.0	<----- this fails to execute the mret insn in the sv32 test app!
+git checkout v5.2.0
+
+#pip3 install ninja
+#sudo apt install libglib2.0-dev
+#sudo apt install mason		# may or may not have been relevant
+#sudo apt install libpixman-1-dev
+
+# I saw this on line after I did the above:
+# https://embeddedinn.xyz/articles/tutorial/Linux-Python-on-RISCV-using-QEMU-from-scratch/
+
+
+sudo apt install ninja-build libglib2.0-dev libpixman-1-dev	# is mason necessary?
+./configure --target-list=riscv32-softmmu --prefix=$PROJECTS/install/rv32i
+make -j4
+make install
+
+
+>>> This can now run the same test progs that work on the apt package qemu on Ubuntu 20.04
+
+
+# note that I can add --enable-debug to the qemu config to build it for debugging
+
+
+
+************ On Ubuntu 20.04 *****************************
+git clone git@github.com:qemu/qemu.git
+cd qemu
+#git checkout v6.0.0 <----- this fails to execute the mret insn in the sv32 test app!
+git checkout v5.2.0 # <----- problem with the gdb dashboard (see hack above)
+
+# might have to do this:   sudo apt install ninja-build libglib2.0-dev libpixman-1-dev
+./configure --target-list=riscv32-softmmu --prefix=$PROJECTS/install/rv32i
+make -j4
+make install
+
+
+
+# to see what machines are supported, run this:
+qemu-system-riscv32 -machine help
+
+
+
+
+**************************************************************************
+*** A handy utility to dump the devicetree object
+
+sudo apt install device-tree-compiler
+
+# Use it like this:
+
+
+
+qemu-system-riscv32 -machine virt,dumpdtb=xxx.dtb -bios none
+dtc xxx.dtb
+

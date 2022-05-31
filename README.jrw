@@ -1,0 +1,414 @@
+    RISC-V rv32 tutorial examples
+
+    Copyright (C) 2021 John Winans
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+
+
+# 2021-05-03
+
+# On ubuntu 20.04, I did this:
+
+XXX Note on x570p, the gdb from the old toolchain build has the python dashboard support
+XXX but the new build does not ???
+
+
+sudo apt install qemu-system-misc
+sudo apt  install device-tree-compiler
+
+qemu-system-riscv32 -machine virt,dumpdtb=qemu-system-riscv32.dtb -bios none
+dtc qemu-system-riscv32.dtb > qemu-system-riscv32.dts
+
+
+# There are some good project files from here on the HiFIVE board & DNNs to 
+	make a robot car!
+http://www.ittc.ku.edu/~heechul/courses/eecs388/schedule.html
+
+
+
+
+# from riscv examples:
+#qemu-system-riscv32 -machine virt -s -S -kernel prog.bin
+#qemu-system-riscv32 -machine virt -m 128M -gdb tcp::1234 -kernel prog.bin
+qemu-system-riscv32 -machine virt -m 1M -gdb tcp::1234 -kernel prog.bin
+
+~/projects/riscv/install/rv32i/bin/riscv32-unknown-elf-gdb prog
+
+target remote :1234
+x/100xb 0x80000000
+p/x $pc
+info all-registers
+set $pc=0x80000000
+s
+s
+s
+...
+
+
+
+##########################################################
+# An app that prints Hello World to a simulated UART
+
+qemu-system-riscv32 -machine virt -m 1M -gdb tcp::1234 -bios none -nographic -kernel prog
+
+# FYI - halt the emulator by pressing: ^A x
+
+
+##########################################################
+# some useful qemu args
+-S    freeze CPU at startup (use 'c' to start execution)
+-s    shorthand for -gdb tcp::1234
+-d item1,...    enable logging of specified items (use '-d help' for a list of log items)
+
+
+
+
+
+
+##########################################################
+# raw loading of binary files into the memory
+qemu-system-riscv32 -machine virt -bios none -device loader,addr=0x80000000,cpu-num=0 -device loader,addr=0x80000000,file=./prog.bin -nographic
+
+# or same thing from an elf file using the memory addresses from the elf file:
+qemu-system-riscv32 -machine virt -bios none -device loader,addr=0x80000000,cpu-num=0 -device loader,file=./prog -nographic
+
+# Apparently, setting the PC here does not change anything because it is set to the address 
+# of the loaded file anyway.
+
+
+##############################################################################################
+# While running this command and gdb:
+qemu-system-riscv32 -machine virt -bios none -device loader,addr=0x80000000,cpu-num=0 -device loader,file=./prog -nographic -gdb tcp::1234
+
+~/projects/riscv/install/rv32i/bin/riscv32-unknown-elf-gdb prog
+target remote :1234
+info all-registers
+
+zero           0x0	0
+ra             0x0	0x0
+sp             0x0	0x0
+gp             0x0	0x0
+tp             0x0	0x0
+t0             0x0	0
+t1             0x0	0
+t2             0x0	0
+fp             0x0	0x0
+s1             0x10000000	268435456
+a0             0x0	0
+a1             0x0	0
+a2             0x0	0
+a3             0x0	0
+a4             0x0	0
+a5             0x0	0
+a6             0x0	0
+a7             0x0	0
+s2             0x80001032	-2147479502
+s3             0x80001032	-2147479502
+s4             0xa	10
+s5             0x0	0
+s6             0x0	0
+s7             0x0	0
+s8             0x0	0
+s9             0x0	0
+s10            0x0	0
+s11            0x0	0
+t3             0x0	0
+t4             0x0	0
+t5             0x0	0
+t6             0x0	0
+pc             0x80000020	0x80000020 <_start+32>
+ft0            0	(raw 0x00000000)
+ft1            0	(raw 0x00000000)
+ft2            0	(raw 0x00000000)
+ft3            0	(raw 0x00000000)
+ft4            0	(raw 0x00000000)
+ft5            0	(raw 0x00000000)
+ft6            0	(raw 0x00000000)
+ft7            0	(raw 0x00000000)
+fs0            0	(raw 0x00000000)
+fs1            0	(raw 0x00000000)
+fa0            0	(raw 0x00000000)
+fa1            0	(raw 0x00000000)
+fa2            0	(raw 0x00000000)
+fa3            0	(raw 0x00000000)
+--Type <RET> for more, q to quit, c to continue without paging--c
+fa4            0	(raw 0x00000000)
+fa5            0	(raw 0x00000000)
+fa6            0	(raw 0x00000000)
+fa7            0	(raw 0x00000000)
+fs2            0	(raw 0x00000000)
+fs3            0	(raw 0x00000000)
+fs4            0	(raw 0x00000000)
+fs5            0	(raw 0x00000000)
+fs6            0	(raw 0x00000000)
+fs7            0	(raw 0x00000000)
+fs8            0	(raw 0x00000000)
+fs9            0	(raw 0x00000000)
+fs10           0	(raw 0x00000000)
+fs11           0	(raw 0x00000000)
+ft8            0	(raw 0x00000000)
+ft9            0	(raw 0x00000000)
+ft10           0	(raw 0x00000000)
+ft11           0	(raw 0x00000000)
+ustatus        Could not fetch register "ustatus"; remote failure reply 'E14'
+fflags         0x0	RD:0 NV:0 DZ:0 OF:0 UF:0 NX:0
+frm            0x0	FRM:0 [RNE (round to nearest; ties to even)]
+fcsr           0x0	RD:0 NV:0 DZ:0 OF:0 UF:0 NX:0 FRM:0 [RNE (round to nearest; ties to even)]
+uie            Could not fetch register "uie"; remote failure reply 'E14'
+utvec          Could not fetch register "utvec"; remote failure reply 'E14'
+uscratch       Could not fetch register "uscratch"; remote failure reply 'E14'
+uepc           Could not fetch register "uepc"; remote failure reply 'E14'
+ucause         Could not fetch register "ucause"; remote failure reply 'E14'
+utval          Could not fetch register "utval"; remote failure reply 'E14'
+uip            Could not fetch register "uip"; remote failure reply 'E14'
+sstatus        0x0	0
+sedeleg        Could not fetch register "sedeleg"; remote failure reply 'E14'
+sideleg        Could not fetch register "sideleg"; remote failure reply 'E14'
+sie            0x0	0
+stvec          0x0	0
+scounteren     0x0	0
+sscratch       0x0	0
+sepc           0x0	0
+scause         0x0	0
+stval          0x0	0
+sip            0x0	0
+satp           0x0	0
+hstatus        Could not fetch register "hstatus"; remote failure reply 'E14'
+hedeleg        Could not fetch register "hedeleg"; remote failure reply 'E14'
+hideleg        Could not fetch register "hideleg"; remote failure reply 'E14'
+hie            Could not fetch register "hie"; remote failure reply 'E14'
+htvec          Could not fetch register "htvec"; remote failure reply 'E14'
+hscratch       Could not fetch register "hscratch"; remote failure reply 'E14'
+hepc           Could not fetch register "hepc"; remote failure reply 'E14'
+hcause         Could not fetch register "hcause"; remote failure reply 'E14'
+hbadaddr       Could not fetch register "hbadaddr"; remote failure reply 'E14'
+hip            Could not fetch register "hip"; remote failure reply 'E14'
+mstatus        0x0	SD:0 VM:00 MXR:0 PUM:0 MPRV:0 XS:0 FS:0 MPP:0 HPP:0 SPP:0 MPIE:0 HPIE:0 SPIE:0 UPIE:0 MIE:0 HIE:0 SIE:0 UIE:0
+misa           0x4014112d	RV32ACDFIMSU
+medeleg        0x0	0
+mideleg        0x0	0
+mie            0x0	0
+mtvec          0x0	0
+mcounteren     0x0	0
+mucounteren    Could not fetch register "mucounteren"; remote failure reply 'E14'
+mscounteren    0x0	0
+mhcounteren    Could not fetch register "mhcounteren"; remote failure reply 'E14'
+mhpmevent3     0x0	0
+mhpmevent4     0x0	0
+mhpmevent5     0x0	0
+mhpmevent6     0x0	0
+mhpmevent7     0x0	0
+mhpmevent8     0x0	0
+mhpmevent9     0x0	0
+mhpmevent10    0x0	0
+mhpmevent11    0x0	0
+mhpmevent12    0x0	0
+mhpmevent13    0x0	0
+mhpmevent14    0x0	0
+mhpmevent15    0x0	0
+mhpmevent16    0x0	0
+mhpmevent17    0x0	0
+mhpmevent18    0x0	0
+mhpmevent19    0x0	0
+mhpmevent20    0x0	0
+mhpmevent21    0x0	0
+mhpmevent22    0x0	0
+mhpmevent23    0x0	0
+mhpmevent24    0x0	0
+mhpmevent25    0x0	0
+mhpmevent26    0x0	0
+mhpmevent27    0x0	0
+mhpmevent28    0x0	0
+mhpmevent29    0x0	0
+mhpmevent30    0x0	0
+mhpmevent31    0x0	0
+mscratch       0x0	0
+mepc           0x0	0
+mcause         0x0	0
+mtval          0x0	0
+mip            0x0	0
+mbase          Could not fetch register "mbase"; remote failure reply 'E14'
+mbound         Could not fetch register "mbound"; remote failure reply 'E14'
+mibase         Could not fetch register "mibase"; remote failure reply 'E14'
+mibound        Could not fetch register "mibound"; remote failure reply 'E14'
+mdbase         Could not fetch register "mdbase"; remote failure reply 'E14'
+mdbound        Could not fetch register "mdbound"; remote failure reply 'E14'
+pmpcfg0        0x0	0
+pmpcfg1        0x0	0
+pmpcfg2        0x0	0
+pmpcfg3        0x0	0
+pmpaddr0       0x0	0
+pmpaddr1       0x0	0
+pmpaddr2       0x0	0
+pmpaddr3       0x0	0
+pmpaddr4       0x0	0
+pmpaddr5       0x0	0
+pmpaddr6       0x0	0
+pmpaddr7       0x0	0
+pmpaddr8       0x0	0
+pmpaddr9       0x0	0
+pmpaddr10      0x0	0
+pmpaddr11      0x0	0
+pmpaddr12      0x0	0
+pmpaddr13      0x0	0
+pmpaddr14      0x0	0
+pmpaddr15      0x0	0
+tselect        Could not fetch register "tselect"; remote failure reply 'E14'
+tdata1         Could not fetch register "tdata1"; remote failure reply 'E14'
+tdata2         Could not fetch register "tdata2"; remote failure reply 'E14'
+tdata3         Could not fetch register "tdata3"; remote failure reply 'E14'
+dcsr           Could not fetch register "dcsr"; remote failure reply 'E14'
+dpc            Could not fetch register "dpc"; remote failure reply 'E14'
+dscratch       Could not fetch register "dscratch"; remote failure reply 'E14'
+mcycle         0xa8262534	-1473895116
+minstret       0xa8298948	-1473672888
+mhpmcounter3   0x0	0
+mhpmcounter4   0x0	0
+mhpmcounter5   0x0	0
+mhpmcounter6   0x0	0
+mhpmcounter7   0x0	0
+mhpmcounter8   0x0	0
+mhpmcounter9   0x0	0
+mhpmcounter10  0x0	0
+mhpmcounter11  0x0	0
+mhpmcounter12  0x0	0
+mhpmcounter13  0x0	0
+mhpmcounter14  0x0	0
+mhpmcounter15  0x0	0
+mhpmcounter16  0x0	0
+mhpmcounter17  0x0	0
+mhpmcounter18  0x0	0
+mhpmcounter19  0x0	0
+mhpmcounter20  0x0	0
+mhpmcounter21  0x0	0
+mhpmcounter22  0x0	0
+mhpmcounter23  0x0	0
+mhpmcounter24  0x0	0
+mhpmcounter25  0x0	0
+mhpmcounter26  0x0	0
+mhpmcounter27  0x0	0
+mhpmcounter28  0x0	0
+mhpmcounter29  0x0	0
+mhpmcounter30  0x0	0
+mhpmcounter31  0x0	0
+mcycleh        0x53fcf	344015
+minstreth      0x53fcf	344015
+mhpmcounter3h  0x0	0
+mhpmcounter4h  0x0	0
+mhpmcounter5h  0x0	0
+mhpmcounter6h  0x0	0
+mhpmcounter7h  0x0	0
+mhpmcounter8h  0x0	0
+mhpmcounter9h  0x0	0
+mhpmcounter10h 0x0	0
+mhpmcounter11h 0x0	0
+mhpmcounter12h 0x0	0
+mhpmcounter13h 0x0	0
+mhpmcounter14h 0x0	0
+mhpmcounter15h 0x0	0
+mhpmcounter16h 0x0	0
+mhpmcounter17h 0x0	0
+mhpmcounter18h 0x0	0
+mhpmcounter19h 0x0	0
+mhpmcounter20h 0x0	0
+mhpmcounter21h 0x0	0
+mhpmcounter22h 0x0	0
+mhpmcounter23h 0x0	0
+mhpmcounter24h 0x0	0
+mhpmcounter25h 0x0	0
+mhpmcounter26h 0x0	0
+mhpmcounter27h 0x0	0
+mhpmcounter28h 0x0	0
+mhpmcounter29h 0x0	0
+mhpmcounter30h 0x0	0
+mhpmcounter31h 0x0	0
+cycle          0xa8e2ef10	-1461522672
+time           Could not fetch register "time"; remote failure reply 'E14'
+instret        0xa8e803fc	-1461189636
+hpmcounter3    0x0	0
+hpmcounter4    0x0	0
+hpmcounter5    0x0	0
+hpmcounter6    0x0	0
+hpmcounter7    0x0	0
+hpmcounter8    0x0	0
+hpmcounter9    0x0	0
+hpmcounter10   0x0	0
+hpmcounter11   0x0	0
+hpmcounter12   0x0	0
+hpmcounter13   0x0	0
+hpmcounter14   0x0	0
+hpmcounter15   0x0	0
+hpmcounter16   0x0	0
+hpmcounter17   0x0	0
+hpmcounter18   0x0	0
+hpmcounter19   0x0	0
+hpmcounter20   0x0	0
+hpmcounter21   0x0	0
+hpmcounter22   0x0	0
+hpmcounter23   0x0	0
+hpmcounter24   0x0	0
+hpmcounter25   0x0	0
+hpmcounter26   0x0	0
+hpmcounter27   0x0	0
+hpmcounter28   0x0	0
+hpmcounter29   0x0	0
+hpmcounter30   0x0	0
+hpmcounter31   0x0	0
+cycleh         0x53fcf	344015
+timeh          Could not fetch register "timeh"; remote failure reply 'E14'
+instreth       0x53fcf	344015
+hpmcounter3h   0x0	0
+hpmcounter4h   0x0	0
+hpmcounter5h   0x0	0
+hpmcounter6h   0x0	0
+hpmcounter7h   0x0	0
+hpmcounter8h   0x0	0
+hpmcounter9h   0x0	0
+hpmcounter10h  0x0	0
+hpmcounter11h  0x0	0
+hpmcounter12h  0x0	0
+hpmcounter13h  0x0	0
+hpmcounter14h  0x0	0
+hpmcounter15h  0x0	0
+hpmcounter16h  0x0	0
+hpmcounter17h  0x0	0
+hpmcounter18h  0x0	0
+hpmcounter19h  0x0	0
+hpmcounter20h  0x0	0
+hpmcounter21h  0x0	0
+hpmcounter22h  0x0	0
+hpmcounter23h  0x0	0
+hpmcounter24h  0x0	0
+hpmcounter25h  0x0	0
+hpmcounter26h  0x0	0
+hpmcounter27h  0x0	0
+hpmcounter28h  0x0	0
+hpmcounter29h  0x0	0
+hpmcounter30h  0x0	0
+hpmcounter31h  0x0	0
+mvendorid      0x0	0
+marchid        0x0	0
+mimpid         0x0	0
+mhartid        0x0	0
+priv           0x3	prv:3 [Machine]
+(gdb) 
+
+##########################################################
+# I was able to add 
+#	-smp cpus=4
+# and see 4 CPUs in the dtb!!
+
+# Use wfi to stop qemu from spinning

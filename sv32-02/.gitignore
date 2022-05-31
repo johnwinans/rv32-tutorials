@@ -1,0 +1,5 @@
+*.o
+*.lst
+*.bin
+prog
+prog_8080

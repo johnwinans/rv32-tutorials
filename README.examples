@@ -1,0 +1,846 @@
+    RISC-V rv32 tutorial examples
+
+    Copyright (C) 2021 John Winans
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+
+
+
+TODO
+
+- Provide make dependancies the right way :-(
+	--> Manually code all dependancies to given Makefiles rather than play with auotomatic.
+
+- Dealing with circular linker dependancies:
+	-Wl,--start-group -lc -lgcc -lm -lMyProjectLib -Wl,--end-group 
+
+- Should I run the linker directly?
+
+- See verbose C course code in the assembler listing:
+	-Wa,-adhln=test.s -g -fverbose-asm
+
+
+For Installation, see: README.setup
+
+
+***********************************************************************************
+*** Overview of a virtual machine's memory map
+
+FLASH (R/O memory)
+
+RAM (R/W, atomic, coherent etc)
+
+I/O (R/W, no atomic, side effects, not coherent due to side effects)
+
+'holes' nothing is there = treat as I/O that can not be read nor written
+	We do this because we want any instruction that tries to access data in this range 
+	to be terminated immediately (because there must be a bug in the code.)
+
+(Note that things like FENCE are discussed later)
+
+
+
+
+
+***********************************************************************************
+*** Modes of operation
+	00 = user
+	01 = supervisor
+	10 = hypervisor (design still under review)
+	11 = machine
+
+The idea is that machine mode can do anything, hypervisor mode has less control, 
+super less still, and so on down to user mode where only the least privelidged
+instructions are available.
+
+The machine boots into machine mode where code (like a BIOS) will configure the 
+low level hardware settings.
+
+At this point it depends on the type of processor design as it can be:
+	M	- machine mode only (embedded systems)
+	MU	- secure embedded systems (and simple operating systems = no virtual memory)
+	MSU	- operating systems like Unix (with virtual memory)
+
+The mode of operation is managed by manipulating the values in the CSRs (Control & Status Regs)
+
+
+***********************************************************************************
+*** RESET (p.45)
+Upon reset, a hart's privilege mode is set to M. The mstatus fields MIE and MPRV are reset to 0. 
+If little-endian memory accesses are supported, the mstatus/mstatush field MBE is reset to 0.
+The misa register is reset to enable the maximal set of supported extensions and widest MXLEN,
+as described in Section 3.1.1. The pc is set to an implementation-defined reset vector. The mcause
+register is set to a value indicating the cause of the reset. Writable PMP registers A and L fields
+are set to 0, unless the platform mandates a different reset value for some PMP registers A and L
+fields. All other hart state is unspecified.
+
+
+***********************************************************************************
+*** NMI - implementation defined
+Non-maskable interrupts (NMIs) are only used for hardware error conditions, and cause an immediate 
+jump to an implementation-defined NMI vector running in M-mode regardless of the state of a hart's 
+interrupt enable bits.
+
+
+***********************************************************************************
+** 3.6 Physical Memory Attributes (p.46)
+NOTE: Priv Arch manual does /not/ discuss how this might be configured at run-time.
+	We will assume that the virtual processor(s) in QEMU will have been set at the
+	time of its 'virtual manufacture'.
+
+-->	For sake of JB series, discuss the fact that PMAs exist and need to be understood
+-->	in order to know if/when a FENCE instruction might be required to assure access
+-->	ordering.
+
+	XXX Need to discuss PMAs: coherent, non-coherent, RAM, ROM, I/O, FENCE, & Atomicity
+
+p.47:
+	The most important characterization of a given memory address range is whether it holds regular
+	main memory, or I/O devices, or is vacant.  Regular main memory is required to have a number
+	of properties, specified below, whereas I/O devices can have a much broader range of attributes.
+
+	Memory regions that do not fit into regular main memory, for example, device scratchpad RAMs,
+	are categorized as I/O regions. Vacant regions are also classified as I/O regions but with attributes
+	specifying that no accesses are supported.
+
+	Note that PMAs do not vary due to the mode of operation nor execution context.
+
+	Some PMAs depend on the manufacture of the processor, others depend on the 
+	implementation of the circuitry around the processor and upon the nature of
+	busses that, for example, might allow cold or hot pluggable devices.)
+
+p.48: Atomicity
+p.49: LR/SC
+p.49: Alignment
+p.50: Memory-Ordering PMAs & FENCE insns
+p.51: Coherence and Cacheability PMAs
+	Coherence is a property defined for a single physical address, and indicates that writes to that
+	address by one agent will eventually be made visible to other agents in the system. Coherence
+	is not to be confused with the memory consistency model of a system, which defines what values
+	a memory read can return given the previous history of reads and writes to the entire memory
+	system.
+
+p.52: Idempotency PMAs
+	Idempotency is the property of certain operations in mathematics and computer 
+	science whereby they can be applied multiple times without changing the result 
+	beyond the initial application.
+
+	Reading the receive-data register of a UART is /NOT/ an Idempotent operation!
+	It /also/ has the side effect of changing the status flags in registers that
+	appear as memory bytes at (an)other address(es)!
+
+
+
+
+***********************************************************************************
+** 3.7 Physical Memory Protection 
+	NOTE: Support for this is optional
+
+	An optional physical memory protection (PMP) unit provides per-hart machine-mode 
+	control registers to allow physical memory access privileges (read, write, execute) 
+	to be specified for each physical memory region.
+
+	- PMP CSRs p.53
+		Spoiler alert: Sv32 supports 34-bit address phys address so PMPs are designed accordingly 
+	PMP address reg = 2-34
+	PMP config reg = 8-bits of: L00AAXWR
+	- A = address-matching mode p.55
+	- L = Locked PMP entries remain locked until the hart is reset. (p.56)
+		Setting the L bit locks the PMP entry even when the A field is set to OFF.
+
+p.57:
+	Implementations with virtual memory are permitted to perform address translations speculatively
+	and earlier than required by an explicit virtual-memory access. The PMP settings for the resulting
+	physical address may be checked at any point between the address translation and the explicit
+	virtual-memory access. Hence, when the PMP settings are modified in a manner that affects either
+	the physical memory that holds the page tables or the physical memory to which the page tables
+	point, M-mode software must synchronize the PMP settings with the virtual memory system. This
+	is accomplished by executing an SFENCE.VMA instruction with rs1=x0 and rs2=x0, after the
+	PMP CSRs are written.
+	
+
+
+
+
+
+
+
+
+***********************************************************************************
+*** Intro to The CSRs (Control & Status Regs)
+
+- The CSR insns are /not/ prvelidged!  However, the CSR numbers that are allowed
+	to be accessed depend on the current operating mode.
+
+- 4096 CSRs for each hart
+- some items are memory mapped so hart X can a software IRQ to hart Y
+- mapping conventions are used to make security trivial (MSBs indicate req'd mode)
+	bits 8 & 9 spec the req'd mode (that matches the MPP value)
+		00 = user
+		01 = supervisor
+		10 = hypervisor
+		11 = machine
+	** NOTE that some CSRs are given more than one ID so that they can be accessed by more than one mode!
+- CSR priv abbreviations used in priv insns table 2.3 etc:
+	URW = User R/W
+	URO = User Read Only
+	SRW = Supervisor R/W
+	SRO = Supervisor Read Only
+	...
+- field types:
+	Reserved Writes Preserve Values, Reads Ignore Values (WPRI)
+	Write/Read Only Legal Values (WLRL)
+	Write Any Values, Reads Legal Values (WARL)
+		can use these fields to set values & read back to see if values are supported
+
+
+***********************************************************************************
+*** machine CSRs
+
+** do walk-thru of the csr.h file and its macros here
+- probably need a general C/C++ #define video on its own with gcc -E examples:
+	how to use # and ## on parameter strings (see csr.h)
+	how to use variadic args, __FILE__, etc (see dbg.h)
+
+** need an overall TRAP/IRQ/EXCP sync/asynch lecture to get terminology right!
+TRAP = general term referring to handling an IRQ or EXCP
+- "By default, all traps at any privilege level are handled in machine mode," p.30
+- "Delegated interrupts result in the interrupt being masked at the delegator 
+privilege level. For example, if the supervisor timer interrupt (STI) is 
+delegated to S-mode by setting mideleg[5], STIs will not be taken when 
+executing in M-mode. By contrast, if mideleg[5] is clear, STIs can be taken
+in any mode and regardless of current mode will transfer control to M-mode." p.31
+
+- XXX Scan the entire priv manual for consistency use of TRAP/EXCP/IRQ:
+
+	From ISA manual:
+		We use the term exception to refer to an unusual condition occurring 
+		at run time associated with an instruction in the current RISC-V hart. 
+		We use the term interrupt to refer to an external asynchronous event 
+		that may cause a RISC-V hart to experience an unexpected transfer of 
+		control.  We use the term trap to refer to the transfer of control to 
+		a trap handler caused by either an exception or an interrupt.
+
+		The instruction descriptions in following chapters describe conditions 
+		that can raise an exception during execution. The general behavior of 
+		most RISC-V EEIs is that a trap to some handler occurs when an 
+		exception is signaled on an instruction (except for floating-point 
+		exceptions, which, in the standard floating-point extensions, do not 
+		cause traps). The manner in which interrupts are generated, routed to, 
+		and enabled by a hart depends on the EEI.
+
+		Our use of 'exception' and 'trap' is compatible with that in the 
+		IEEE-754 floating-point standard.
+
+
+
+- misa (WARL) Machine ISA Register (table 3.2)
+	Use this to figure out what sort of features your processor has
+	Note that you can (optionally) shut off features that you want disabled 
+	observe that qemu should have U and S bits on the virt machine
+- mvendorid (vendor)
+- marchid (architecture)
+- mimpid (version)
+- mhartid
+	must have at least one hart with ID zero
+	any other harts can be numbered in any way the vendor wants
+	qemu numbers them 0, 1, 2, 3, 4 and it would be incredibly awkward to do different due to the
+		way that the PLIC and CLINT work
+- mstatus
+	MIE = global machine-mode IRQ enable
+	SIE = global supervisor-mode IRQ enable
+	** NOTE: The xIE bit is assumed to be 1 for higher-level modes at any time.
+		When in super-mode, MIE will be enabled regardless of the MIE bit
+		When in user-mode, MIE and SIE will both be enabled regardless of the MIE and SIE bits
+		Opposite is also true: lower level nIE is assumed 0 when running in a higher-level mode.
+	"Higher-privilege-level code can use separate per-interrupt enable
+bits to disable selected higher-privilege-mode interrupts before ceding control to a lower-privilege
+mode." p.21
+	mret and sret insns are used to change the mode 
+		xRET sets the xIE = xPIE and the current mode to xPP
+		There is no 'current mode' field in mstatus!
+		see rules about setting the xPP to lowest mode on p.21
+	SXL and UXL do not exist on RV32
+	MPRV = modify priv of load & store insns (not insn fetches) so that they are done as if
+		running in the mode specified in MPP (thus virt mem accesses can be xlated on addresses 
+		being used.) An MRET or SRET instruction that changes the privilege mode to a mode less 
+		privileged than M also sets MPRV=0.
+	SUM = allow supervisor-mode load & stores to access virt addresses that are marked for user 
+		mode only. This is so that some bugs can be prevented in super-mode code.  Note that
+		super-mode code can NEVER exec code in user-exec virt memory!
+	MXR = Make eXecutable Readable. (allow super to read from exec-only user-mode pages)
+	TVM = trap access to SATP or SFENCE.VMA in S-mode (for simple virtualization)
+	TW = Timeout Wait
+		cause WFI to timeout in a short-while if executed in lower priv modes causing illegal instruction exception (help virtualization by not forcing a hart to actually idle)
+		** NOTE WFI need not actually wait!!!! This is implementation-dependant
+	TSR = Trap SRet
+		(alows to simulate a hypervisor)
+	FS = Floating point State
+		Used to optimize context save/restore when float is known not to have been altered
+	XS = same as FS but for 'user-mode extensions'
+	SD = 0 IFF FS and XS are both 0 (simple check for dirty state by checking sign the bit)
+		** sometimes we see the sign bit being used with seems screwy with veriable length CSRs.
+			But is so we can blt rather than waste time and-masking the CSR value.
+
+- mstatush (rv32 only for msb bits)
+	MBE = use big-endian for load/store access in M-mode (can be hard-wired to 0)
+	SBE = use big-endian for load/store access in S-mode (can be hard-wired to 0)
+		** NOTE page-tables are accessed according to SBE.
+	** NEVER can use big-endian for insn-fetch because it is impossible.  Why? because
+		the length-encoding of insns is in the lsbs... where location is only known if 
+		stored in little-endian order (in first byte, else is at byte 2, 4, 8, ??)
+		This also allows bkwd-compatible future giant insns to be suported!
+- Spoiler alert:
+	sstatus = subset of the mstatus bits
+	sstatush = subset of the mstatush bits
+
+- mtvec Machine Trap-Vector Base-Address Register
+	MODE = 0 for direct (all traps lead to Rome)
+	MODE = 1 for Vectored IRQs (traps go to 'IRQ 0')
+	** note that there can be alignment constraints on the base address 
+		(so can insert bits rather than add cause*4 to the BASE value)
+- medeleg and mideleg Machine Trap Delegation Registers
+	delegate excps/IRQs to lower priv levels
+	* NOTE that ALL IRQs go to M mode uinless delegated!
+	In systems with S-mode, the medeleg and mideleg registers must exist, and setting a 
+		bit in medeleg or mideleg will delegate the corresponding trap, when occurring in 
+		S-mode or U-mode, to the S-mode trap handler.
+
+- mip Machine Interrupt pending
+	** note that some mfgs allow mip to be written to shut off a pending IRQ for things that
+		are not level-sensitive... like the software IRQ.
+- mie Machine Interrupt enable
+	MEI[EP] - External IRQs (from PLIC)
+	SEI[EP]
+	MTI[EP] - timer IRQ (from CLINT)
+	STI[EP]
+	MSI[EP]	- software IRQ
+	SSI[EP]
+
+- xHPMx = perf monitoring
+- xCOUNTEREN
+- xCOUNTINHIBIT
+
+- mscratch = scratch register
+	** surprisingly useful!!!!  Use to save one reg in trap handlers so can later use it
+		as an address base register.  See p.37 for discussuion of using a CSR swap insn to
+		use the mstatus to hold a pointer to a context block to use in trap handlers.
+- mepc Machine Exception Program Counter
+	This is set to the PC register value when a trap is taken into M-mode.
+	This is copied back into the PC by the MRET insn.
+- mcause Machine Cause
+	Why was a trap taken?
+- mtval Machine Trap Value
+	Depends on the type of the trap.  Ex: The virtual @ of a page fault.
+
+
+***********************************************************************************
+*** These are memory-mapped to the CLINT in qemu (prog mfgs can do as they wish for this)  
+- mtime 	(memory-mapped so each hart can access the same one)
+	** discuss how to read it without a carry in the middle messing up the value
+- mtimecmp
+	** discuss how to write it without glitching on MTIP (p.43)
+- CLINT.msip[N]
+	Used to set the MSIP bit on hart N
+
+
+
+
+
+
+
+
+
+
+
+***********************************************************************************
+*** Supervisor CSRs p.59
+These all work same as in machine state:
+
+- sstatus (subset/same bits from mstatus)
+- stvec (not shared with M-mode)
+- sip (subset/same bits from mip)
+- sie (subset/same bits from mie)
+
+- scounteren (allow access of perf stuff to U-mode)
+
+- sscratch (not shared with M-mode)
+
+- sepc (s-mode PC at time of trap)
+- scause
+	** note that no M-mode IRQs can be delegated to S-mode (XXX is this true??)
+
+- stval
+	exception-specific information
+
+- satp = root-level page table pointer & mode
+	MODE (on RV32 systems) = 0=bare (no virt mem), 1=Sv32 
+	ASID = used to manage TLB so it need not be flushed without reason
+	PPN = PPN<<12 = root page table address (note is 34-bit address) 
+
+
+
+
+
+
+
+***********************************************************************************
+*** priv'd insns 
+
+ECALL	- will cause a trap (look up ecxp code for these XXX)
+EBREAK	- will cause a trap
+
+MRET (p.44)
+SRET
+- see above discussion of the TSR bit in mstatus
+- xRET will set the PC to the value in the xEPC register
+
+WFI (p.45)
+- /can/ wait for a trap or nothing at all if mfg desires (qemu will idle)
+- see above discussion of the TW bit in mstatus 
+- if is terminated by a trap then mepc = PC+4
+
+SFENCE.VMA p.70
+	Executing an SFENCE.VMA instruction guarantees that any previous stores already 
+	visible to the current RISC-V hart are ordered before all subsequent implicit 
+	references from that hart to the memory-management data structures.
+
+	** Can spec the ASID and an address to let the TLB know what entries are involved.
+	** If don't want to understand all optimizations up front, then just flush when you touch the
+		PTEs! 
+
+
+
+
+
+
+
+***********************************************************************************
+*** EXAMPLE PROGGIES
+
+*** freestanding01
+
+A minimal crt0.S example showing how to start up and use the UART to print 
+on the console.
+
+- csrw, li, j, and la pseudo insns (or is it pseudo opers?)
+
+gcc labels: https://ftp.gnu.org/old-gnu/Manuals/gas-2.9.1/html_chapter/as_5.html
+- labels starting with L are purged after assembly by as thus are not seen in the symbol table.
+- local labels 0-9 can be fwd/bwd references (.f and .b) in asm insns
+
+
+
+*** freestanding02
+
+An example of starting a C program with newlib that can use printf and hexdump.
+
+An oddity of this code is that the UART appears to run infinitely fast (nice)
+and therefore requires zero configure/setup.
+
+
+*** freestanding03
+
+Same exact main.c and crt0.S as freestanding02, but factor out common code 
+into lib/librv32*.a
+
+
+*** freestanding04-qemu-exit
+
+A short app to demonstrate how a guest can termine qemu.
+
+
+*** freestanding05-mtime
+
+A simple spin-loop that dumps the free-running mtime counter value.
+
+
+*** freestanding06-panic
+
+A demonstration of the panic & dump logic.
+
+XXX need to clean up panic to make sure the hart really stopps, preferably stopping ALL harts
+
+
+*** freestanding07-mtime-irq
+
+Similar to freestanding05-mtime but demonstrates IRQs and wfi.
+
+
+	Notes:
+	- The RISC-V integer ALU has no flags. (unusual but simplifies pipeline design.)
+	- The FPU, does, have flags that can be saved & restored if needed.
+		If an IRQ handler is known not to use the FPU and the interrupted code
+		will be resumed then we can save time by not saving & restoring the FPU flags!
+		See lecture: https://youtu.be/l7JIry6PEX4?t=543
+
+	- write an freestanding multi-threaded app like that proposed here:
+		https://youtu.be/l7JIry6PEX4?t=2122
+
+
+***********************************************************************************
+***********************************************************************************
+***********************************************************************************
+***********************************************************************************
+
+
+***********************************************************************************
+*** wrt virtual memory management
+
+Should we jump between machine mode & user mode?
+	XXX Can do this by setting stvec to an invalid page & let a double-faults warp from U to M mode.
+	/all/ traps will go into machine mode if they are not delegated!!!   <---------------------------
+Should we jump between supervisor mode and user mode?
+Something else?
+
+
+
+
+*** device tree is passed in from qemu!!!!!!!  
+	Use it to self-config stuff to the extent that it is reasonable!!!
+
+	https://www.youtube.com/watch?v=xlb6g8w01fc
+		https://riscv.org/proceedings/2019/06/risc-v-workshop-zurich-proceedings/
+		10:20 see notes on gdb
+		13:17 how to run with the hypervisor entension turned on
+
+	https://github.com/riscv/opensbi/blob/master/docs/platform/qemu_virt.md
+
+
+*** OMG!! this is what I wanted to publish:  :'(
+		https://embeddedinn.xyz/articles/tutorial/Adding-a-custom-peripheral-to-QEMU/
+			This has device drivers, call graphs, device tree stuff.... :-o
+
+		https://theintobooks.com/computers/intocomputers_vhdl.html
+			A start on creating a RISC-V processor in vhdl and running code on qemu
+			https://theintobooks.wordpress.com/2019/12/28/hello-world-on-risc-v-with-qemu/
+
+		https://github.com/michaeljclark/riscv-probe
+		https://mindchasers.com/dev/rv-getting-started
+		https://interrupt.memfault.com/blog/tag/zero-to-main/
+		https://github.com/riscvarchive/riscv-qemu/wiki
+		https://github.com/riscv/meta-riscv/#build-image
+		https://risc-v-getting-started-guide.readthedocs.io/en/latest/linux-qemu.html
+
+	Consider using the tp register to hold the hart context struct address & swap with mscratch on trap!
+
+	qemu... -s -S  will start qemu halted so can connect with gdb before it is running
+	info thread = show threads running
+	then can:
+		break main
+		c
+
+	riscv64-unknown-elf-gdb
+	file /home/winans/NIU/courses/463/qemu/msu/prog
+	target extended-remote :1234
+	
+	WRT the newlib dependancies: https://sourceware.org/newlib/
+		See: https://sourceware.org/newlib/libc.html#Syscalls
+		The version that comes with riscv-gnu-toolchain is slightly different
+
+		https://interrupt.memfault.com/blog/boostrapping-libc-with-newlib
+			(This includes notes on malloc global locking etc.)
+
+	Getting gdb to support python
+		https://github.com/riscv/riscv-gnu-toolchain/issues/722
+
+
+	
+
+***********************************************************************************
+**** Freestanding from scratch on qemu ****
+
+Fig 1.1 explain layers
+
+Show system block diagram
+Show memory map
+
+Table 1.2 discuss pro & con of each M, MU, MSU system
+
+Add notes on philosophy in csr.h
+	Why I named the commands: read write set clear swap
+	Note lack of satisfaction with set but wanted to match the csr insn names.  Consider change to setbits and clearbits!
+
+Consider adding MEI/MDI and SEI/SDI macros that ise csrrsi ci insns to save the reg load.
+
+Rethink save-areas!!  Need super & machine trap areas for each hart because machine EI is always true ehen running at lower levels!!
+
+Use a csr swap on mscratch with the hart context stored in scratch when ever the hart is not in machine mode!
+	Storing the machine context pointer in mscratch is a great idea from the priv manual .
+
+
+MEI is implied to be 1 (enabled) any time running in S or U mode.
+
+SEI is implied to be 1 (enabled) any time running in U mode.
+
+Thus we can leave mei = 0 and know irqs only on when running at lower levels!
+
+Need examples of supervisor delegation.  When medeleg=0 then excps will call the machine mode handlers!
+
+Check that qemu xlen really IS 32!!
+
+Run a demo app with M S and U modes with no virt mem to demo the modes & debug trap delegation
+
+Run same app again with SV32
+
+Discuss why MSU is easier than just MU when U code has buffers spanning pages to communicate with OS. 
+
+Tinker with SUM and other ways to access buffers in U virt mem using a split mode memory mapping & global PTEs.
+
+* Before solving problems by wasteing resources to solve memory management problems was all the rage, 
+	2GB was more than enough memory!
+
+
+We can use any reg for any purpise BUT the C compiler & linker will expect the ABI is properly used when clobbering registers & doing relaxation.
+
+
+Make sure the clint uses the glitch-free write code to set the mtimecmp when not in the IRQ handler.  And walk thru the code in section 3.2.1 !!
+
+Use same inlined code in the IRQ handler?
+... Not really need since glitch or not, it isnt a problem.
+
+Before virt mem, discuss PMAs so can fail fast when we screw up!!!
+	Does qemu provide them? Or maybe it provides them hardcoded based on the devicetree?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+*******************************
+
+
+Write an app that can be used to debug itself:
+-create a machine state panic/dump routine callable in any state
+-create a default trap & interrupt handler & demonstrate it with 
+	illegal memory accesses
+	illegal/unimplemented instructions 
+	ecall/ebreak
+
+print the mtimer in a loop
+enable mtimer interrupts & let fail of first into default handler
+write a, exception dispatch table with weak aliases 
+
+print the mtimer value from an IRQ handler
+	discuss __attribute__ ((interrupt)) & show code with & without it in place!
+		save ALL regs, mret vs ret, etc
+	mie, mip, mstatus, mtvec, mcause
+
+	detail the leap-frog method of advancing mtimecmp glitch-free
+	is it necessary to do that when IRQs are not enabled?
+	create a test case that glitches it when they are disabled to make sure
+		may not be portable
+	observe that it may not be possible to accurately read mtime on a 32-bit system
+		loop on read hi, lo and then hi again to make sure hi not changed
+
+introduce the PLIC 
+	https://sifive.cdn.prismic.io/sifive/0d163928-2128-42be-a75a-464df65e04e0_sifive-interrupt-cookbook.pdf
+		CPU reads the claim register to acquire the interrupt ID
+		A successful claim will atomically clear the pending bit in the PLIC interrupt pending register
+		The pending flag at the interrupt source should also be cleared when handled
+		It is legal for a CPU toattempt to claim an interrupt even when the pending bit is not set
+		Before exiting the PLIC handler with MRET/SRET/URET, the claim/complete register is written back with the non zero claim/complete value obtained upon handler entry
+
+		each IRQ has a configurable priority, from 1-7, with 7 beingthe highest priority (0 means do not interrupt)
+		global threshold register within the PLIC that allows interrupts configured below a certainlevel to be blocked
+			if the threshold register contains a value of 5, all PLIC inter-rupt configured with priorities from 1 through 5 will not be allowed to propagate to the CPU
+		If global interrupts with the same priority arrive at the same time into the PLIC, priority is given tothelowerof the two Interrupt IDs.
+		If the PLIC is used with the CLINT, then the externalinterrupt connection routed from the PLIC is tied directly to the CPU.
+		Interrupt IDs for global interrupts routedthrough the PLIC are independent of the interrupt IDs for local interrupts. 
+			Thus, software mayneed to implement a specific handler which supports a software lookup table for the global interrupts that are managed by the PLIC, and arrive at the CPU through the external interrupt con-nection.
+		Recall that the CLINT local interrupts priorities are fixed since they are tied to their interruptID
+		Additionally, the PLIC handler may check for additional pending global interrupts once the initialclaim/complete process has finished, prior to exiting the handler. This method could save addi-tional PLIC save/restore context for global interrupts.
+			Demo with a delayed start of the mtimer handler that needs to catch up if start mtimecmp at 0
+			Alt: set mtimecmp into future & init clock to rounded down mtime/delata & mtimecmp accordingly & it might only then do one irq to catch up
+		(see proposed IRQ handler wrapper structure on page 24/26)
+		For systems that implement Supervisor mode, there will be additional Supervisor interruptconnections into each HART. p25/27
+		Pseudo Code to Setup an Interrupt
+			1. Writemtvecto configure the interrupt mode and the base address for the interruptvector table, and optionally,mtvtfor CLIC modes. The CSR number formtvtis0x307.
+			2. Enable interrupts in memory mapped PLIC or CLIC register space. The CLINT doesnot contain interrupt enable bits.
+			3. Write mie to enable the software, timer, and external interrupt enables for each privilege mode
+			4. Write mstatus to enable interrupts globally for each supported privilege mode
+		(The freedom-e-sdk has a dts-to-.h file generator but did not run for me.)
+		The PLIC example is using some older representation of the devicetree but is understanbly relatable.
+
+	https://cdn2.hubspot.net/hubfs/3020607/An%20Introduction%20to%20the%20RISC-V%20Architecture.pdf
+		shows same style trap handler as seen in the sifive-interrupt-cookbook
+
+	https://github.com/riscv/riscv-plic-spec/blob/master/riscv-plic.adoc
+		I suspect that 'context' here refers to a hart/CLINT and thus shows how the PLIC works with multiple harts???
+		All regs are 32-bits wide
+			base + 0x000000: Reserved (interrupt source 0 does not exist)
+			base + 0x000004: Interrupt source 1 priority
+			base + 0x000008: Interrupt source 2 priority
+			...
+			base + 0x000FFC: Interrupt source 1023 priority
+			base + 0x001000: Interrupt Pending bit 0-31
+			base + 0x00107C: Interrupt Pending bit 992-1023
+			...
+			base + 0x002000: Enable bits for sources 0-31 on context 0
+			base + 0x002004: Enable bits for sources 32-63 on context 0
+			...
+			base + 0x00207F: Enable bits for sources 992-1023 on context 0
+			base + 0x002080: Enable bits for sources 0-31 on context 1
+			base + 0x002084: Enable bits for sources 32-63 on context 1
+			...
+			base + 0x0020FF: Enable bits for sources 992-1023 on context 1
+			base + 0x002100: Enable bits for sources 0-31 on context 2
+			base + 0x002104: Enable bits for sources 32-63 on context 2
+			...
+			base + 0x00217F: Enable bits for sources 992-1023 on context 2
+			...
+			base + 0x1F1F80: Enable bits for sources 0-31 on context 15871
+			base + 0x1F1F84: Enable bits for sources 32-63 on context 15871
+			base + 0x1F1FFF: Enable bits for sources 992-1023 on context 15871
+			...
+			base + 0x1FFFFC: Reserved
+			base + 0x200000: Priority threshold for context 0
+			base + 0x200004: Claim/complete for context 0
+			base + 0x200008: Reserved
+			...
+			base + 0x200FFC: Reserved
+			base + 0x201000: Priority threshold for context 1
+			base + 0x201004: Claim/complete for context 1
+			...
+			base + 0x3FFE000: Priority threshold for context 15871
+			base + 0x3FFE004: Claim/complete for context 15871
+			base + 0x3FFE008: Reserved
+			...
+		Interrupt Source Priority #0 is reserved which indicates it does not exist/is disabled (send note to improve the phrasing there)
+		Thematically, we find that IRQ level 0, prio 0, vector 0 generally don't exist
+			For example, mtvec entry 0 is the trap handler (because there is no IRQ 0.) 
+		A pending bit in the PLIC core can be cleared by setting the associated enable bit then performing a claim.
+			This seems wrong since it does not appear that a claim is certain to give you any one pending IRQ???? 
+		The threshold register is a WARL field. 
+			The PLIC will mask all PLIC interrupts of a priority less than or equal to threshold. 
+			For example, a`threshold` value of zero permits all interrupts with non-zero priority.
+		The PLIC can perform an interrupt claim by reading the claim/complete register, which returns the ID of the highest priority pending interrupt or zero if there is no pending interrupt. 
+			(The PLIC performs a claim??????)
+			A successful claim will also atomically clear the corresponding pending bit on the interrupt source.  (what bit???)
+			The PLIC can perform a claim at any time and the claim operation is not affected by the setting of the priority threshold register.
+			(I propose we show the leading zero in the addresses so that it is obvious how the xition from 0x200004 to 0x3FFF004 works... which is more clear stated like this: 0x0200004 0x3FFF004, or this: 0x00200004 0x03FFF004)
+		The PLIC signals it has completed executing an interrupt handler by writing the interrupt ID it received from the claim to the claim/complete register.
+			The PLIC does not check whether the completion ID is the same as the last claim ID for that target.
+			If the completion ID does not match an interrupt source that is currently enabled for the target, the completion is silently ignored.
+			The Interrupt Completion registers are context based and located at the same address with Interrupt Claim Process register, which is at (4K alignement + 4) starts from offset 0x200000.
+
+
+
+
+
+
+
+write a command-line system monitor proggie
+
+
+
+figure out how to start multiple cores with a simple barrier:
+- use naive amoor (because all ram is initialized to zero)
+	OR bits into a word waiting for ALL the harts to have completed the task of doing so to know that they have
+	all gotten to point X before continuing!
+
+- on a single socket, we can use the msip to wake up wfi-ing harts
+	(if have multiple sockets, do the clints appear in the global memory space?)
+
+
+
+
+    PROJECTS
+    - call the giant qemu nightmare: Project Darien (after the Darien Gap)
+        qemu-system-riscv32 -machine virt -device help
+        https://xilinx-wiki.atlassian.net/wiki/spaces/A/pages/862421121/Device+Trees
+            (I gave up on fw_cfg and just loaded the dtb with a device file= cli option.)
+    - general RISC-V programming web sites
+        https://web.eecs.utk.edu/~smarz1/courses/ece356/notes/assembly/
+        https://mth.st/blog/riscv-qemu/
+        https://twilco.github.io/riscv-from-scratch/2019/07/28/riscv-from-scratch-4.html
+            see the utterances and how this wiki works for my github projects
+    - Consider using multiple device file args to spec different progs and starting addresses for each hart's PC reg
+    - https://unix.stackexchange.com/questions/645618/writing-an-os-shutdown-process-for-qemu-xv6
+    - .option norvc turns off compressed insns
+    - https://github.com/michaeljclark/riscv-probe
+        Might find good hints in this source to see how things work
+    - device tree crap
+        https://fossies.org/linux/qemu/dtc/Documentation/manual.txt
+    - According to 'An Introduction to the RISC-V Architecture.pdf':
+        CSRs are specific to a Mode
+        Virtual Memory Requires an S-Mode implementation
+        See page 39 for an idea on how to implement a generic trap/irq handler
+    - https://github.com/riscv/riscv-plic-spec/blob/master/riscv-plic.adoc
+        Talks about the PLIC and gives memory addresses of its regs
+    - sifive-interrupt-cookbook.pdf:
+        Note that 'use of exception and trap matches that inm the IEEE-754 standard'
+        See notes on the freedom-metal startup code early_trap_vector!!
+        mtvec.base must be aminimum 4-byte aligned value in direct mode, and minimum 64-byte aligned value in vectored mode
+        p17: Software interrupts are triggered by writing msip for a particular CPU!!
+    - https://github.com/sifive/freedom-metal
+        look at .github/workflows for release management!!!   <----------------------------------
+        guard against mtime 32/64-bit rollover when reading:
+            https://github.com/sifive/freedom-metal/blob/master/src/drivers/riscv_clint0.c
+        guard against spurrious IRQs when changing the mtimecmp
+    - how does one hart see/change the MSIP bots on other harts?
+
+    - multicore startup sync
+        OR bits into a word waiting for ALL the harts to have completed the task of doing so to know that they have
+            all gotten to point X before continuing!
+
+
+
+
+
+Articles:
+	https://mth.st/blog/riscv-qemu/
+	https://www.sifive.com/blog/risc-v-qemu-part-2-the-risc-v-qemu-port-is-upstream
+	https://www.sifive.com/blog/risc-v-qemu-part-1-privileged-isa-hifive1-virtio
+	https://stackoverflow.com/questions/58420670/qemu-bios-vs-kernel-vs-device-loader-file
+	
+	https://medium.com/swlh/building-your-first-risc-v-barcode-reader-app-on-ubuntu-20-04-6e1c934716d9
+	https://saveriomiroddi.github.io/Quick-riscv-cross-compilation-and-emulation/
+	https://github.com/riscv/riscv-gnu-toolchain
+	https://panthema.net/2013/0124-GCC-Output-Assembler-Code/
+	https://sifive.github.io/freedom-metal-docs/
+	https://cdn2.hubspot.net/hubfs/3020607/An%20Introduction%20to%20the%20RISC-V%20Architecture.pdf
+	https://sifive.cdn.prismic.io/sifive/0d163928-2128-42be-a75a-464df65e04e0_sifive-interrupt-cookbook.pdf
+	http://www.ittc.ku.edu/~heechul/courses/eecs388/lab6.pdf
+	https://qemu-project.gitlab.io/qemu/system/generic-loader.html
+	https://qemu-project.gitlab.io/qemu/system/target-riscv.html
+
+	RVALP
+	risc-v Unprivileged Spec
+	risc-v Privileged Spec
+
+Notice that by making memory windows 4K and aligned to 4K, base
+pointers can be easily loaded with lui instructions and accessed using
++/- displacements in lw/sw insns!
+
+Note that EVERY time there is an alignment requirement, it is because it 
+is ALWAYS simpler/cheaper/faster/less-energy to directly replace/substitute 
+the least-significant digits of some base address by hard-wiring an offset into
+the LSBs than it would be to require an adder to sum the base and the offset value!
+

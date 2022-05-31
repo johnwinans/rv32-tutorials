@@ -1,0 +1,304 @@
+    RISC-V rv32 tutorial examples
+
+    Copyright (C) 2021 John Winans
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+
+
+See branch 'riscv-jrw-uarts' for diffs against the master (post v6.0.0)
+
+
+commit 28c8bf8c67476a91d09a30cdde6a74a3ea56d68b (HEAD -> riscv-jrw-uarts)
+Author: John Winans <john@winans.org>
+Date:   Thu Jul 8 10:20:24 2021 -0500
+
+    Added vjrw with extra UARTS!
+
+ default-configs/devices/riscv32-softmmu.mak |   1 +
+ hw/riscv/Kconfig                            |  17 ++
+ hw/riscv/meson.build                        |   1 +
+ hw/riscv/vjrw.c                             | 862 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ include/hw/riscv/vjrw.h                     |  99 ++++++
+ 5 files changed, 980 insertions(+)
+
+
+
+XXX THIS DID NOT WORK!!!
+
+
+
+
+
+
+**********************************************************************
+**********************************************************************
+**********************************************************************
+**********************************************************************
+* In v5.0.0:
+
+Edit default-configs/riscv32-softmmu.mak to add:
+
+	CONFIG_RISCV_VJRW=y
+
+Edit hw/riscv/Kconfig and copy the RISCV_VIRT section as-is to a new one called RISCV_VJRW:
+
+	config RISCV_VJRW
+    	bool
+    	imply PCI_DEVICES
+    	imply TEST_DEVICES
+    	select PCI
+    	select HART
+    	select SERIAL
+    	select GOLDFISH_RTC
+    	select VIRTIO_MMIO
+    	select PCI_EXPRESS_GENERIC_BRIDGE
+    	select PFLASH_CFI01
+    	select SIFIVE
+
+There is no meson.build in v5.0.0?
+
+Copy include/hw/riscv/virt.h to include/hw/riscv/vjrw.h:
+
+	cp include/hw/riscv/virt.h include/hw/riscv/vjrw.h
+
+Copy hw/riscv/virt.c to hw/riscv/vjrw.c:
+
+	cp hw/riscv/virt.c to hw/riscv/vjrw.c
+
+
+Add and commit these changes for a simple baseline (it will not build due to duplicate symbols):
+
+	git add .
+	git commit
+
+
+Edit include/hw/riscv/vjrw.h:
+
+	:1,$s/VIRT/VJRW/g
+	:1,$s/Virt/Vjrw/g
+	:1,$s/virt/vjrw/g
+
+	Add enums for UART1_IRQ, UART2_IRQ, UART3_IRQ:
+
+	enum {
+    	UART0_IRQ = 10,
+    	UART1_IRQ = 12,							// new entry (I used an IRQ not already being used)
+    	UART2_IRQ = 13,							// new entry (I used an IRQ not already being used)
+    	UART3_IRQ = 14,							// new entry (I used an IRQ not already being used)
+    	RTC_IRQ = 11,
+    	VJRWIO_IRQ = 1, /* 1 to 8 */
+    	VJRWIO_COUNT = 8,
+    	PCIE_IRQ = 0x20, /* 32 to 35 */
+    	VJRWIO_NDEV = 0x35 /* Arbitrary maximum number of interrupts */
+	};
+
+	Add 
+	enum {
+    	VJRW_DEBUG,
+    	VJRW_MROM,
+    	VJRW_TEST,
+    	VJRW_RTC,
+    	VJRW_CLINT,
+    	VJRW_PLIC,
+    	VJRW_UART0,
+    	VJRW_UART1,								// new entry for VJRW_UART1
+    	VJRW_UART2,								// new entry for VJRW_UART2
+    	VJRW_UART3,								// new entry for VJRW_UART3
+    	VJRW_VJRWIO,
+    	VJRW_FLASH,
+    	VJRW_DRAM,
+    	VJRW_PCIE_MMIO,
+    	VJRW_PCIE_PIO,
+    	VJRW_PCIE_ECAM
+	};
+
+
+Edit hw/riscv/vjrw.c:
+
+	:1,$s/VIRT/VJRW/g
+	:1,$s/Virt/Vjrw/g
+	:!,$s/virt_/vjrw_/g
+
+	XXX NOTE that we change virt_ (not just virt) above!!!
+		This keeps the devicetree symbol names for the flast and virtio devices the same as for the virt.c machine.
+
+	Change include of hw/riscv/virt.h to hw/riscv/vjrw.h
+
+		#include "hw/riscv/vjrw.h"
+
+	Change the MACHINE_TYPE_NAME in riscv_vjrw_machine_typeinfo to "vjrw"
+
+	Add the new UARTs to vjrw_memmap[]:
+
+    	[VJRW_UART1] =       { 0x10000100,         0x100 },
+    	[VJRW_UART2] =       { 0x10000200,         0x100 },
+    	[VJRW_UART3] =       { 0x10000300,         0x100 },
+
+	Add new nodes for the UARTs to the devicetree by copying the stanza for UART0 and changing the UART numbers:
+
+    	nodename = g_strdup_printf("/uart@%lx",
+        	(long)memmap[VJRW_UART1].base);										// VJRW_UART0 -> VJRW_UARTn
+    	qemu_fdt_add_subnode(fdt, nodename);
+    	qemu_fdt_setprop_string(fdt, nodename, "compatible", "ns16550a");
+    	qemu_fdt_setprop_cells(fdt, nodename, "reg",
+        	0x0, memmap[VJRW_UART1].base,										// VJRW_UART0 -> VJRW_UARTn
+        	0x0, memmap[VJRW_UART1].size);										// VJRW_UART0 -> VJRW_UARTn
+    	qemu_fdt_setprop_cell(fdt, nodename, "clock-frequency", 3686400);
+    	qemu_fdt_setprop_cell(fdt, nodename, "interrupt-parent", plic_phandle);
+    	qemu_fdt_setprop_cell(fdt, nodename, "interrupts", UART1_IRQ);			// UART0_IRQ -> UARTn_IRQ
+
+		...
+
+
+	Add the UART device instances to the virtual machine by copying the stanza for UART0 and chaning the numbers:
+
+    serial_mm_init(system_memory, memmap[VJRW_UART1].base,						// VJRW_UART0 -> VJRW_UARTn
+        0, qdev_get_gpio_in(DEVICE(s->plic), UART1_IRQ), 399193,				// UART0_IRQ -> UARTn_IRQ
+        serial_hd(1), DEVICE_LITTLE_ENDIAN);									// serial_hd(0) -> serial_hd(1)
+
+
+
+
+Edit hw/riscv/Makefile.objs to add the following line at the end of the file:
+
+	obj-$(CONFIG_RISCV_VJRW) += vjrw.o
+
+
+
+
+
+
+**********************************************************************
+**********************************************************************
+**********************************************************************
+**********************************************************************
+* In v6.0.0:
+
+XXX Building and running the v6.0.0 version fails to execute the mret instruction????
+
+
+
+
+
+**********************************************************************
+**********************************************************************
+**********************************************************************
+**********************************************************************
+
+To build the version from my branch: v5.0.0-vjrw
+
+git clone git@github.com:johnwinans/qemu.git
+
+git checkout v5.0.0-vjrw
+
+rm -rf /home/winans/projects/riscv/install/v5.0.0-vjrw
+rm -rf build
+mkdir build
+cd build
+../configure --target-list=riscv32-softmmu --prefix=/home/winans/projects/riscv/install/v5.0.0-vjrw
+#../configure --target-list=riscv32-softmmu --enable-debug --prefix=/home/winans/projects/riscv/install/v5.0.0-vjrw
+make -j4
+make install
+
+
+
+**********************************************************************
+**********************************************************************
+**********************************************************************
+**********************************************************************
+
+20210710 issues when running various tests:
+
+
+*** Getting the damn ld script to put crt0.S first!!!!
+
+If I compile a func called main() with gcc freestanding, it still does this:
+	.section .text.startup,"ax",@progbits
+
+Merely renaming main() to cmain() (a diff btw two main's only changing thename):
+        winans@x570:~/NIU/courses/463/qemu/freestanding02$ diff main.s main.s1
+        29c29
+        <       .text
+        ---
+        >       .section        .text.startup,"ax",@progbits
+        31,33c31,33
+        <       .globl  cmain
+        <       .type   cmain, @function
+        < cmain:
+        ---
+        >       .globl  main
+        >       .type   main, @function
+        > main:
+        106c106
+        <       .size   cmain, .-cmain
+        ---
+        >       .size   main, .-main
+
+THEN... put .section .text.startup,"ax",@progbits into crt0.S for the _start function!
+
+
+It appears that ENTRY() causes the linker to check for the start address
+but does not relocate the function to 0.  Here is a missing _start:
+	ld: warning: cannot find entry symbol _start; defaulting to 000000008000003c
+
+Watch the section map after the compile to make sure we have no mystery sections!!
+- Note that there is .srodata.cst8 hiding in there as well as .eh_frame
+
+	prog  :
+	section                size         addr
+	.text               0x14a08   0x80000000
+	.rodata               0xf36   0x80014a08
+	.srodata                0x4   0x80015940
+	.srodata.cst8          0x18   0x80015948	<---- this can merge into .rodata like this: 
+	.eh_frame              0xb0   0x80015960
+	.data                 0x9fc   0x80015a10
+	.bss                   0x8c   0x8001640c
+	.riscv.attributes      0x2a          0x0
+	.comment               0x12          0x0
+	.debug_info          0x6177          0x0
+	.debug_abbrev        0x16ac          0x0
+	.debug_loclists      0x81e5          0x0
+	.debug_aranges        0x218          0x0
+	.debug_rnglists      0x14d9          0x0
+	.debug_line          0xa1b8          0x0
+	.debug_str            0xb70          0x0
+	.debug_line_str       0x339          0x0
+	.debug_frame          0x308          0x0
+	Total               0x32930
+
+
+Use readelf to see what is going on in prog or any of the .o files!
+    readelf -S prog
+    readelf -a prog
+
+
+
+
+***************************************** damn gdb problems:
+
+If I run my custom qemu:
+
+	info registers all
+	...
+	priv           Could not fetch register "priv"; remote failure reply 'E14'
+
+If I run the default v5.0.0:
+
+	info registers all
+	...
+	priv           0x3      prv:3 [Machine]
+
+

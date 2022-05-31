@@ -1,0 +1,72 @@
+    RISC-V rv32 tutorial examples
+
+    Copyright (C) 2021 John Winans
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+
+
+
+**************  linker script hell ********************
+
+use -Wl,--verbose to dump the default script in use
+
+relocation error R_RISCV_GPREL_I against symbol `__preinit_array_start
+	https://github.com/riscv/riscv-gnu-toolchain/issues/815
+
+https://gist.github.com/csukuangfj/c4bd4f406912850efcbedd2367ac5f33
+
+
+----> this crap goes away if we use >RAM to place everything into the memory
+
+
+
+
+**************  linker scripts ********************
+
+Notes on copying data initializers from ROM to RAM:
+	https://sourceware.org/binutils/docs-2.36/ld/REGION_005fALIAS.html#REGION_005fALIAS
+
+On assertions to make sure there is enough space for something:
+	https://sourceware.org/binutils/docs-2.36/ld/Miscellaneous-Commands.html#Miscellaneous-Commands
+
+https://sourceware.org/binutils/docs-2.36/ld/PHDRS.html#PHDRS
+
+
+
+A list & description of many of the ELF section names:
+	https://refspecs.linuxbase.org/LSB_3.0.0/LSB-PDA/LSB-PDA/specialsections.html
+
+A detailed discussion of the ELF format & headers:
+	https://docs.oracle.com/cd/E19683-01/816-1386/6m7qcoblj/index.html
+
+
+
+
+
+************** external links to things that might be useful:
+
+c++ CTOR/DTOR
+
+https://community.nxp.com/t5/S32-Design-Studio/Constructors-of-Global-Variables-Are-Not-Being-Called/td-p/648347
+https://forum.mutable-instruments.net/t/stmlib-startup-files-and-global-c-constructors/13384/2
+https://www.math.utah.edu/docs/info/ld_3.html
+http://cs107e.github.io/guides/gcc/
+https://twilco.github.io/riscv-from-scratch/2019/04/27/riscv-from-scratch-2.html
+https://ftp.gnu.org/old-gnu/Manuals/ld-2.9.1/html_node/ld_24.html#SEC24
+https://wiki.osdev.org/Linker_Scripts
+https://www.embeddedrelated.com/showthread/comp.arch.embedded/31571-1.php
+https://raw.githubusercontent.com/pulp-platform/pulp-riscv-gnu-toolchain/master/riscv.ld
+

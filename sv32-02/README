@@ -1,0 +1,35 @@
+#    RISC-V rv32 tutorial examples
+#
+#    Copyright (C) 2021 John Winans
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+
+
+# 20210510 jrw
+
+##############################################################
+# Run like this:
+
+#qemu-system-riscv32 -machine virt -m 128M -bios none -device loader,file=./prog -nographic -s
+qemu-system-riscv32 -machine virt -cpu rv32gcsu-v1.10.0 -m 128M -bios none -device loader,file=./prog -nographic -s
+
+
+# to load prog_8080 into memory at address 80800000:
+qemu-system-riscv32 -machine virt -m 128M -bios none -device loader,file=./prog -nographic -s -device loader,file=prog_8080.bin,addr=0x80800000
+
+##############################################################
+# To stop qemu: ^A x
+
+to make qemu wait for GDB to connect before running:  -S

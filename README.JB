@@ -1,0 +1,69 @@
+    RISC-V rv32 tutorial examples
+
+    Copyright (C) 2021 John Winans
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+
+
+
+1) See README.setup to install the tools
+
+
+2) hello world
+	build a hello world proggie 
+		Observe this is not a lesson on Makefiles and fancy dependancies.
+		Defining the RAM areas for the LD script. Use this to dump the script in use
+			-Wl,--verbose 
+
+		Deal with circular linker dependancies:
+			-Wl,--start-group -lc -lgcc -lm -lMyProjectLib -Wl,--end-group
+
+	run it on qemu
+		watch it run with logging like this:
+			qemu... -d in_asm -D logfilename.out
+
+		qemu... -s -S  will start qemu halted so can connect with gdb before it is running
+			info thread = show threads running
+			then can:
+				riscv32-unknown-elf-gdb ./prog
+				target remote :1234
+				break main
+				c
+
+
+		Note that there is a bootstrap at 0x1000 that will load a0 with 
+		the mhartid and a1 with the address of a devicetree structure:
+			0x00001000:  00000297    auipc           t0,0            # 0x1000
+			0x00001004:  02028593    addi            a1,t0,32
+			0x00001008:  f1402573    csrrs           a0,mhartid,zero
+			0x0000100c:  0182a283    lw              t0,24(t0)
+			0x00001010:  00028067    jr              t0
+
+
+
+gdb commands of interest:
+
+riscv32-unknown-elf-gdb ./prog
+target remote :1234
+info thread
+info registers
+info registers csr
+
+
+
+
+** XXX temporary jvirt location:
+/home/winans/projects/riscv/install/v5.0.0-vjrw/bin/qemu-system-riscv32 -machine vjrw
